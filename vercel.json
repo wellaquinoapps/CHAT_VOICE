@@ -1,0 +1,13 @@
+{
+  "rewrites": [
+    {
+      "source": "/api/register-child",
+      "destination": "/api/register-child"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}
+

@@ -9,11 +9,8 @@ import { Dialog } from '../ui/Dialog';
 import { supabase } from '../../lib/supabase';
 import { setChildMemberStatus } from '../../lib/family';
 
-// In dev: calls local server via Vite proxy (/api → localhost:3001/functions/v1)
-// In prod: calls Supabase Edge Function directly
-const FUNCTIONS_BASE = import.meta.env.DEV
-  ? '/api'
-  : `${import.meta.env.VITE_SUPABASE_URL}/functions/v1`;
+// Usa /api/register-child (servidor local em dev, Vercel Serverless Function em produção)
+const REGISTER_CHILD_ENDPOINT = '/api/register-child';
 import type { Family, FamilyMember } from '../../lib/family';
 
 interface GuardianPanelProps {
@@ -59,7 +56,7 @@ export const GuardianPanel: React.FC<GuardianPanelProps> = ({
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error('Sessão expirada. Faça login novamente.');
 
-      const response = await fetch(`${FUNCTIONS_BASE}/register-child`, {
+      const response = await fetch(REGISTER_CHILD_ENDPOINT, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
