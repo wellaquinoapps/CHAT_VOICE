@@ -12,5 +12,13 @@ export default defineConfig({
     server: {
         port: 5173,
         host: true,
+        proxy: {
+            // In dev, redirect all Supabase Edge Function calls to local server
+            '/api': {
+                target: 'http://localhost:3001',
+                changeOrigin: true,
+                rewrite: function (p) { return p.replace(/^\/api/, '/functions/v1'); },
+            },
+        },
     },
 });

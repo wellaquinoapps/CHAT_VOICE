@@ -22,11 +22,14 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
 
 export async function registerServiceWorker(): Promise<ServiceWorkerRegistration | null> {
   if (!isPushNotificationSupported()) return null;
+  // In dev mode (Vite) the service worker file is served as HTML (index.html fallback)
+  // so we skip registration to avoid the MIME type error in the console.
+  if (import.meta.env.DEV) return null;
   try {
-    const reg = await navigator.serviceWorker.register('/service-worker.js');
+    const reg = await navigator.serviceWorker.register('/service-worker.js', { scope: '/' });
     return reg;
   } catch (err) {
-    console.error('Service worker registration failed:', err);
+    console.warn('Service worker registration failed (non-critical):', err);
     return null;
   }
 }

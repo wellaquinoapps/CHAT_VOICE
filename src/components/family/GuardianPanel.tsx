@@ -1,10 +1,19 @@
-import React, { useEffect, useState } from 'react';
-import { Copy, Check, Users, UserPlus, PauseCircle, PlayCircle } from 'lucide-react';
+import React, { useState } from 'react';
+import { Copy, Check, Users, UserPlus, PauseCircle, PlayCircle, X } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../ui/Card';
 import { Button } from '../ui/Button';
 import { Avatar } from '../ui/Avatar';
 import { Badge } from '../ui/Badge';
-import { generateInvite, setChildMemberStatus } from '../../lib/family';
+import { Input } from '../ui/Input';
+import { Dialog } from '../ui/Dialog';
+import { supabase } from '../../lib/supabase';
+import { setChildMemberStatus } from '../../lib/family';
+
+// In dev: calls local server via Vite proxy (/api → localhost:3001/functions/v1)
+// In prod: calls Supabase Edge Function directly
+const FUNCTIONS_BASE = import.meta.env.DEV
+  ? '/api'
+  : `${import.meta.env.VITE_SUPABASE_URL}/functions/v1`;
 import type { Family, FamilyMember } from '../../lib/family';
 
 interface GuardianPanelProps {
@@ -20,22 +29,90 @@ export const GuardianPanel: React.FC<GuardianPanelProps> = ({
   currentUserId,
   onMembersChanged,
 }) => {
+  // Invite code (legacy - requires SQL function deployed)
   const [inviteToken, setInviteToken] = useState<string | null>(null);
   const [inviteExpiry, setInviteExpiry] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [copied, setCopied] = useState(false);
+
+  // Direct child registration
+  const [showAddChildModal, setShowAddChildModal] = useState(false);
+  const [childName, setChildName] = useState('');
+  const [childEmail, setChildEmail] = useState('');
+  const [childPassword, setChildPassword] = useState('');
+  const [isRegisteringChild, setIsRegisteringChild] = useState(false);
+  const [registerSuccess, setRegisterSuccess] = useState<string | null>(null);
+
+  // Generic
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // ── Registrar filho diretamente via Edge Function ───────────────────────────
+  const handleRegisterChild = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setRegisterSuccess(null);
+    if (!childName.trim() || !childEmail.trim() || !childPassword) return;
+
+    setIsRegisteringChild(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('Sessão expirada. Faça login novamente.');
+
+      const response = await fetch(`${FUNCTIONS_BASE}/register-child`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+          'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+        },
+        body: JSON.stringify({
+          familyId: family.id,
+          childName: childName.trim(),
+          childEmail: childEmail.trim().toLowerCase(),
+          childPassword,
+        }),
+      });
+
+      const text = await response.text();
+      let data: any = {};
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch (jsonErr) {
+        throw new Error(text || `Erro HTTP ${response.status}`);
+      }
+
+      if (!response.ok || data.error) throw new Error(data.error || 'Erro ao cadastrar filho.');
+
+      setRegisterSuccess(`✓ Conta de ${childName.trim()} criada! Login: ${childEmail.trim().toLowerCase()}`);
+      setChildName('');
+      setChildEmail('');
+      setChildPassword('');
+      onMembersChanged();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Erro ao cadastrar filho.';
+      setError(msg);
+    } finally {
+      setIsRegisteringChild(false);
+    }
+  };
+
+  // ── Código de convite (requer SQL function deployed) ───────────────────────
   const handleGenerateInvite = async () => {
     setIsGenerating(true);
     setError(null);
     try {
-      const result = await generateInvite(family.id, 48);
-      setInviteToken(result.token);
-      setInviteExpiry(result.expires_at);
+      const { data, error: rpcError } = await supabase.rpc('generate_family_invite', {
+        p_family_id: family.id,
+        p_expires_in_hours: 48,
+      });
+      if (rpcError) throw rpcError;
+      setInviteToken(data.token);
+      setInviteExpiry(data.expires_at);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Erro ao gerar convite.');
+      setError(
+        'Código de convite indisponível no momento. Use o cadastro direto acima.'
+      );
     } finally {
       setIsGenerating(false);
     }
@@ -81,13 +158,33 @@ export const GuardianPanel: React.FC<GuardianPanelProps> = ({
         </CardHeader>
       </Card>
 
-      {/* Invite */}
+      {/* ── CADASTRO DIRETO DO FILHO ──────────────────────────────────────────── */}
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
             <div>
-              <CardTitle>Convidar criança</CardTitle>
-              <CardDescription>Gere um link de convite para adicionar um membro</CardDescription>
+              <CardTitle>Adicionar filho</CardTitle>
+              <CardDescription>Crie a conta do seu filho diretamente aqui</CardDescription>
+            </div>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => { setShowAddChildModal(true); setError(null); setRegisterSuccess(null); }}
+            >
+              <UserPlus className="h-4 w-4" />
+              Cadastrar filho
+            </Button>
+          </div>
+        </CardHeader>
+      </Card>
+
+      {/* ── CÓDIGO DE CONVITE (alternativa) ──────────────────────────────────── */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle>Código de convite</CardTitle>
+              <CardDescription>Alternativa: gere um código para o filho usar no app</CardDescription>
             </div>
             <Button
               variant="secondary"
@@ -95,8 +192,7 @@ export const GuardianPanel: React.FC<GuardianPanelProps> = ({
               onClick={handleGenerateInvite}
               isLoading={isGenerating}
             >
-              <UserPlus className="h-4 w-4" />
-              Gerar
+              Gerar código
             </Button>
           </div>
         </CardHeader>
@@ -123,11 +219,11 @@ export const GuardianPanel: React.FC<GuardianPanelProps> = ({
         )}
       </Card>
 
-      {/* Members */}
+      {/* ── LISTA DE FILHOS ───────────────────────────────────────────────────── */}
       {children.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle>Crianças</CardTitle>
+            <CardTitle>Filhos cadastrados</CardTitle>
             <CardDescription>Gerencie o acesso de cada membro</CardDescription>
           </CardHeader>
           <CardContent>
@@ -142,10 +238,10 @@ export const GuardianPanel: React.FC<GuardianPanelProps> = ({
                     key={member.id}
                     className="flex items-center gap-3 p-2 rounded-xl hover:bg-gray-50"
                   >
-                    <Avatar name={profile?.display_name ?? undefined} size="sm" />
+                    <Avatar name={(profile as any)?.display_name ?? undefined} size="sm" />
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-gray-900 truncate">
-                        {profile?.display_name ?? 'Sem nome'}
+                        {(profile as any)?.display_name ?? 'Sem nome'}
                       </p>
                       <Badge variant={isActive ? 'success' : 'danger'}>
                         {isActive ? 'Ativo' : 'Suspenso'}
@@ -177,7 +273,76 @@ export const GuardianPanel: React.FC<GuardianPanelProps> = ({
       {error && (
         <p className="text-sm text-red-600 bg-red-50 rounded-xl px-4 py-2">{error}</p>
       )}
+
+      {/* ── MODAL CADASTRO DO FILHO ───────────────────────────────────────────── */}
+      <Dialog
+        open={showAddChildModal}
+        onClose={() => setShowAddChildModal(false)}
+        title="Cadastrar conta do filho"
+      >
+        <form onSubmit={handleRegisterChild} className="space-y-4">
+          <p className="text-sm text-gray-500">
+            Preencha as informações abaixo para criar a conta do seu filho.
+            Ele usará este e-mail e senha para fazer login.
+          </p>
+
+          <Input
+            label="Nome do filho"
+            type="text"
+            value={childName}
+            onChange={e => setChildName(e.target.value)}
+            placeholder="Ex: João Silva"
+            required
+            autoComplete="off"
+          />
+          <Input
+            label="E-mail do filho"
+            type="email"
+            value={childEmail}
+            onChange={e => setChildEmail(e.target.value)}
+            placeholder="filho@email.com"
+            required
+            autoComplete="off"
+            helperText="Pode ser um e-mail criado por você para ele"
+          />
+          <Input
+            label="Senha"
+            type="password"
+            value={childPassword}
+            onChange={e => setChildPassword(e.target.value)}
+            placeholder="Mínimo 6 caracteres"
+            required
+            autoComplete="new-password"
+            helperText="Anote essa senha para dar ao seu filho"
+          />
+
+          {error && (
+            <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>
+          )}
+          {registerSuccess && (
+            <p className="text-sm text-green-700 bg-green-50 rounded-lg px-3 py-2">{registerSuccess}</p>
+          )}
+
+          <div className="flex gap-3 pt-1">
+            <Button
+              type="button"
+              variant="outline"
+              className="flex-1"
+              onClick={() => setShowAddChildModal(false)}
+            >
+              Fechar
+            </Button>
+            <Button
+              type="submit"
+              variant="primary"
+              className="flex-1"
+              isLoading={isRegisteringChild}
+            >
+              Criar conta
+            </Button>
+          </div>
+        </form>
+      </Dialog>
     </div>
   );
 };
-
