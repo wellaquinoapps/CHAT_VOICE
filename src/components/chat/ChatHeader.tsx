@@ -19,7 +19,7 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
   onVideoCall,
 }) => {
   return (
-    <header className="flex items-center gap-3 px-4 py-3 bg-white border-b border-gray-100 shadow-sm flex-shrink-0">
+    <header className="sticky top-0 z-20 flex items-center gap-3 px-4 py-3 bg-white/95 backdrop-blur border-b border-gray-100 shadow-sm flex-shrink-0">
       <Avatar name={peerName} src={peerAvatar} online={peerOnline} size="md" />
       <div className="flex-1 min-w-0">
         <p className="font-semibold text-gray-900 truncate">{peerName ?? 'Família'}</p>

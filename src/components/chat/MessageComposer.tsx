@@ -46,7 +46,7 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({ onSend, disabl
   const canSend = text.trim().length > 0 && !isSending && !disabled;
 
   return (
-    <div className="flex items-end gap-2 px-4 py-3 bg-white border-t border-gray-100 flex-shrink-0">
+    <div className="sticky bottom-0 z-20 flex items-end gap-2 px-4 py-3 bg-white/95 backdrop-blur border-t border-gray-100 flex-shrink-0">
       <textarea
         ref={textareaRef}
         rows={1}
