@@ -7,9 +7,9 @@ import { fetchUserDevices, revokeDevice } from '../../lib/family';
 type UserDevice = {
   id: string;
   user_id: string;
-  device_label: string | null;
-  platform: string | null;
-  last_seen_at: string | null;
+  device_label: string;
+  user_agent: string | null;
+  last_seen_at: string;
   created_at: string;
 };
 
@@ -67,7 +67,7 @@ export const DeviceSessionsPanel: React.FC = () => {
                 <Smartphone className="h-5 w-5 text-gray-400 flex-shrink-0" />
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-gray-900 truncate">
-                    {device.device_label ?? device.platform ?? 'Dispositivo desconhecido'}
+                    {device.device_label || device.user_agent || 'Dispositivo desconhecido'}
                   </p>
                   {device.last_seen_at && (
                     <div className="flex items-center gap-1 mt-0.5">

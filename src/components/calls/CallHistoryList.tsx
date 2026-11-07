@@ -9,8 +9,16 @@ interface CallHistoryListProps {
   memberNames?: Record<string, string>;
 }
 
+function calculateDurationSeconds(startedAt?: string | null, endedAt?: string | null): number | null {
+  if (!startedAt || !endedAt) return null;
+  const start = new Date(startedAt).getTime();
+  const end = new Date(endedAt).getTime();
+  const diff = Math.floor((end - start) / 1000);
+  return diff > 0 ? diff : null;
+}
+
 function formatDuration(seconds?: number | null): string {
-  if (!seconds || seconds === 0) return '';
+  if (!seconds || seconds <= 0) return '';
   const m = Math.floor(seconds / 60);
   const s = seconds % 60;
   if (m === 0) return `${s}s`;
@@ -32,10 +40,10 @@ type BadgeVariant = 'default' | 'success' | 'warning' | 'danger' | 'outline';
 const statusConfig: Record<string, { label: string; variant: BadgeVariant }> = {
   ended: { label: 'Encerrada', variant: 'default' },
   accepted: { label: 'Atendida', variant: 'success' },
-  declined: { label: 'Recusada', variant: 'danger' },
+  rejected: { label: 'Recusada', variant: 'danger' },
   missed: { label: 'Perdida', variant: 'warning' },
-  initiated: { label: 'Iniciada', variant: 'outline' },
   ringing: { label: 'Chamando', variant: 'outline' },
+  cancelled: { label: 'Cancelada', variant: 'outline' },
 };
 
 export const CallHistoryList: React.FC<CallHistoryListProps> = ({
@@ -58,7 +66,8 @@ export const CallHistoryList: React.FC<CallHistoryListProps> = ({
         const isOutgoing = call.initiated_by === currentUserId;
         const isVideo = call.call_type === 'video';
         const status = statusConfig[call.status] ?? { label: call.status, variant: 'outline' as BadgeVariant };
-        const duration = formatDuration(call.duration_seconds);
+        const durationSec = calculateDurationSeconds(call.answered_at ?? call.started_at, call.ended_at);
+        const duration = formatDuration(durationSec);
         const peerName = memberNames[isOutgoing ? call.initiated_by : call.initiated_by] ?? 'Desconhecido';
 
         return (
@@ -67,7 +76,7 @@ export const CallHistoryList: React.FC<CallHistoryListProps> = ({
             className="flex items-center gap-3 px-4 py-3 bg-white rounded-xl border border-gray-100 hover:border-gray-200 transition-colors"
           >
             <div className="flex-shrink-0 text-gray-400">
-              {call.status === 'missed' || call.status === 'declined' ? (
+              {call.status === 'missed' || call.status === 'rejected' ? (
                 <PhoneMissed className="h-5 w-5 text-red-400" />
               ) : isOutgoing ? (
                 <PhoneOutgoing className="h-5 w-5 text-indigo-500" />

@@ -62,7 +62,7 @@ export const GuardianPanel: React.FC<GuardianPanelProps> = ({
     }
   };
 
-  const children = members.filter(m => m.role === 'child');
+  const children = members.filter(m => m.member_role === 'child');
 
   return (
     <div className="space-y-4">
