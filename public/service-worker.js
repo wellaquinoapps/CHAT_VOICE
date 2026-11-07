@@ -9,7 +9,7 @@ self.addEventListener('activate', (event) => {
 // Manipulador de fetch mínimo obrigatório pelo Chrome para habilitar instalação PWA
 self.addEventListener('fetch', (event) => {
   event.respondWith(
-    fetch(event.request).catch(() => caches.match(event.request) as any)
+    fetch(event.request).catch(() => caches.match(event.request))
   );
 });
 
