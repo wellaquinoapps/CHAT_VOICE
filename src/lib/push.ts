@@ -51,12 +51,23 @@ export async function subscribeToPushNotifications(): Promise<boolean> {
       applicationServerKey: convertedVapidKey as unknown as BufferSource,
     });
 
-    const { error } = await supabase.functions.invoke('register-push-subscription', {
-      body: { subscription: subscription.toJSON() },
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      console.warn('Cannot register push: user not authenticated');
+      return false;
+    }
+
+    const response = await fetch('/api/register-push', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify({ subscription: subscription.toJSON() }),
     });
 
-    if (error) {
-      console.error('Failed to register push subscription:', error);
+    if (!response.ok) {
+      console.error('Failed to register push subscription via API');
       return false;
     }
 

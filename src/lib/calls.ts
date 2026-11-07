@@ -31,6 +31,14 @@ export async function initiateCall(conversationId: string, callType: CallType): 
     .single();
 
   if (callError) throw callError;
+
+  // Disparar Web Push em background para acordar o celular bloqueado
+  fetch('/api/send-call-push', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ callId: call.id }),
+  }).catch(e => console.warn('Erro ao disparar push de chamada:', e));
+
   return call as Call;
 }
 
