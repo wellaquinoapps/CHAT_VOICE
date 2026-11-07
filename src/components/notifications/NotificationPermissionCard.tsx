@@ -8,6 +8,7 @@ import {
   subscribeToPushNotifications,
   unsubscribeFromPushNotifications,
   getCurrentPushSubscription,
+  registerServiceWorker,
 } from '../../lib/push';
 
 export const NotificationPermissionCard: React.FC = () => {
@@ -17,6 +18,8 @@ export const NotificationPermissionCard: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [isIOS] = useState(() => /iP(hone|ad|od)/.test(navigator.userAgent));
 
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
   useEffect(() => {
     setPermission(getNotificationPermissionState());
     getCurrentPushSubscription().then(sub => setIsSubscribed(!!sub));
@@ -24,14 +27,27 @@ export const NotificationPermissionCard: React.FC = () => {
 
   const handleEnable = async () => {
     setIsLoading(true);
+    setErrorMessage(null);
     try {
+      const reg = await registerServiceWorker();
+      if (!reg) {
+        throw new Error('Falha ao inicializar Service Worker. Tente fechar e abrir o app.');
+      }
       const success = await subscribeToPushNotifications();
       if (success) {
         setIsSubscribed(true);
         setPermission('granted');
       } else {
-        setPermission(getNotificationPermissionState());
+        const currentPerm = getNotificationPermissionState();
+        setPermission(currentPerm);
+        if (currentPerm === 'granted') {
+          // Permissão dada no sistema, mas inscrição falhou
+          setErrorMessage('Permissão concedida no sistema, mas erro ao registrar credencial push.');
+        }
       }
+    } catch (err: unknown) {
+      console.error('Error enabling notifications:', err);
+      setErrorMessage(err instanceof Error ? err.message : 'Erro ao ativar notificações.');
     } finally {
       setIsLoading(false);
     }
@@ -79,6 +95,12 @@ export const NotificationPermissionCard: React.FC = () => {
               No iOS, adicione este app à tela inicial como PWA para receber notificações.
             </p>
           </div>
+        )}
+
+        {errorMessage && (
+          <p className="text-xs text-red-600 bg-red-50 rounded-lg p-3 mb-3">
+            {errorMessage}
+          </p>
         )}
 
         {permission === 'denied' && (

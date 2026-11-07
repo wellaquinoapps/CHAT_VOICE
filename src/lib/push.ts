@@ -32,51 +32,56 @@ export async function registerServiceWorker(): Promise<ServiceWorkerRegistration
 }
 
 export async function subscribeToPushNotifications(): Promise<boolean> {
-  if (!isPushNotificationSupported()) return false;
+  if (!isPushNotificationSupported()) {
+    throw new Error('Notificações push não são suportadas neste navegador.');
+  }
 
   const permission = await Notification.requestPermission();
-  if (permission !== 'granted') return false;
-
-  try {
-    const reg = await navigator.serviceWorker.ready;
-    const vapidKey = import.meta.env.VITE_VAPID_PUBLIC_KEY;
-    if (!vapidKey) {
-      console.error('VITE_VAPID_PUBLIC_KEY not set');
-      return false;
-    }
-
-    const convertedVapidKey = urlBase64ToUint8Array(vapidKey);
-    const subscription = await reg.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: convertedVapidKey as unknown as BufferSource,
-    });
-
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) {
-      console.warn('Cannot register push: user not authenticated');
-      return false;
-    }
-
-    const subJson = subscription.toJSON();
-    const { error: dbError } = await supabase
-      .from('push_subscriptions')
-      .upsert({
-        user_id: session.user.id,
-        endpoint: subscription.endpoint,
-        p256dh: subJson.keys?.p256dh || '',
-        auth: subJson.keys?.auth || '',
-        updated_at: new Date().toISOString(),
-      }, { onConflict: 'endpoint' });
-
-    if (dbError) {
-      console.error('Failed to save push subscription in supabase:', dbError);
-    }
-
-    return true;
-  } catch (err) {
-    console.error('Push subscription failed:', err);
-    return false;
+  if (permission !== 'granted') {
+    throw new Error('Permissão negada pelo usuário.');
   }
+
+  // Garante que o Service Worker está registrado e pronto com timeout
+  let reg = await navigator.serviceWorker.getRegistration();
+  if (!reg) {
+    reg = await navigator.serviceWorker.register('/service-worker.js', { scope: '/' });
+  }
+
+  const workerReady = await Promise.race([
+    navigator.serviceWorker.ready,
+    new Promise<null>((_, reject) => setTimeout(() => reject(new Error('Tempo esgotado aguardando Service Worker.')), 6000)),
+  ]);
+
+  const vapidKey = import.meta.env.VITE_VAPID_PUBLIC_KEY || 'BC0aFbvJ7pvyHEh8gth0Y5grOUXkEMGgKyDN1ouBMA-nVgNKx85ZUIAt7P-Xuv1PxiVCqxzHzgVwpVcUd0rXH7w';
+
+  const convertedVapidKey = urlBase64ToUint8Array(vapidKey);
+  const subscription = await (workerReady as ServiceWorkerRegistration).pushManager.subscribe({
+    userVisibleOnly: true,
+    applicationServerKey: convertedVapidKey as unknown as BufferSource,
+  });
+
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) {
+    throw new Error('Usuário não autenticado.');
+  }
+
+  const subJson = subscription.toJSON();
+  const { error: dbError } = await supabase
+    .from('push_subscriptions')
+    .upsert({
+      user_id: session.user.id,
+      endpoint: subscription.endpoint,
+      p256dh: subJson.keys?.p256dh || '',
+      auth: subJson.keys?.auth || '',
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'endpoint' });
+
+  if (dbError) {
+    console.error('Failed to save push subscription in supabase:', dbError);
+    throw new Error('Erro ao salvar inscrição no servidor: ' + dbError.message);
+  }
+
+  return true;
 }
 
 export async function unsubscribeFromPushNotifications(): Promise<boolean> {
