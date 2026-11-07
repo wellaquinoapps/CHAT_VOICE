@@ -35,22 +35,38 @@ export async function getUserFamilyData() {
     console.error('Error fetching members:', membersError);
   }
 
-  // 3. Fetch direct conversation for this family
-  const { data: conversations, error: convError } = await supabase
+  // 3. Fetch direct conversation for this family (or ensure one exists)
+  let { data: conversations, error: convError } = await supabase
     .from('conversations')
     .select('*')
     .eq('family_id', familyId)
     .limit(1);
 
-  if (convError) {
-    console.error('Error fetching conversations:', convError);
+  let activeConversation = conversations && conversations.length > 0 ? conversations[0] : null;
+
+  // Se não existir conversa direta e já houver mais de um membro (responsável e filho), cria automaticamente
+  if (!activeConversation && rawMembers && rawMembers.length >= 2) {
+    const { data: newConv } = await supabase
+      .from('conversations')
+      .insert({ family_id: familyId, conversation_type: 'direct' })
+      .select('*')
+      .single();
+
+    if (newConv) {
+      activeConversation = newConv;
+      const memberInserts = rawMembers.map(m => ({
+        conversation_id: newConv.id,
+        user_id: m.user_id,
+      }));
+      await supabase.from('conversation_members').upsert(memberInserts);
+    }
   }
 
   return {
     family: membership.family as unknown as Family,
     currentMember: membership as FamilyMember,
     members: (rawMembers || []) as FamilyMember[],
-    conversation: conversations && conversations.length > 0 ? conversations[0] : null,
+    conversation: activeConversation,
   };
 }
 

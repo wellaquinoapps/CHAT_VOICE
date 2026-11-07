@@ -53,8 +53,8 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({ onSend, disabl
         value={text}
         onChange={handleChange}
         onKeyDown={handleKeyDown}
-        disabled={disabled || isSending}
-        placeholder="Digite uma mensagem..."
+        disabled={isSending}
+        placeholder={disabled ? "Aguardando vínculo da conversa..." : "Digite uma mensagem..."}
         className="flex-1 resize-none rounded-xl border border-gray-200 px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent disabled:bg-gray-50 max-h-40 leading-relaxed"
       />
       <button
