@@ -74,7 +74,7 @@ export async function subscribeToPushNotifications(): Promise<boolean> {
       p256dh: subJson.keys?.p256dh || '',
       auth: subJson.keys?.auth || '',
       updated_at: new Date().toISOString(),
-    }, { onConflict: 'endpoint' });
+    }, { onConflict: 'user_id,endpoint' });
 
   if (dbError) {
     console.error('Failed to save push subscription in supabase:', dbError);
