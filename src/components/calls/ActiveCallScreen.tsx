@@ -35,6 +35,7 @@ export const ActiveCallScreen: React.FC<ActiveCallScreenProps> = ({
   const isVideo = call.call_type === 'video';
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
+  const remoteAudioRef = useRef<HTMLAudioElement>(null);
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoOff, setIsVideoOff] = useState(false);
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
@@ -76,6 +77,11 @@ export const ActiveCallScreen: React.FC<ActiveCallScreenProps> = ({
             onRemoteStream: (stream) => {
               if (remoteVideoRef.current) {
                 remoteVideoRef.current.srcObject = stream;
+                remoteVideoRef.current.play().catch(e => console.warn('Erro ao tocar vídeo remoto:', e));
+              }
+              if (remoteAudioRef.current) {
+                remoteAudioRef.current.srcObject = stream;
+                remoteAudioRef.current.play().catch(e => console.warn('Erro ao tocar áudio remoto:', e));
               }
             },
             onConnectionStateChange: (state) => {
@@ -155,6 +161,8 @@ export const ActiveCallScreen: React.FC<ActiveCallScreenProps> = ({
               {isRinging ? 'Chamando...' : timer}
             </p>
           </div>
+          {/* Elemento de áudio invisível para reproduzir a voz remota */}
+          <audio ref={remoteAudioRef} autoPlay playsInline />
         </div>
       )}
 
