@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Phone, PhoneOff, Video } from 'lucide-react';
 import { Avatar } from '../ui/Avatar';
+import { soundService } from '../../lib/soundService';
 import type { Call } from '../../lib/calls';
 
 interface IncomingCallModalProps {
@@ -17,6 +18,13 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({
   onReject,
 }) => {
   const isVideo = call.call_type === 'video';
+
+  useEffect(() => {
+    soundService.startRingtone();
+    return () => {
+      soundService.stopAll();
+    };
+  }, []);
 
   return (
     <div className="fixed inset-0 z-50 bg-gray-900/95 flex flex-col items-center justify-center gap-8 text-white">

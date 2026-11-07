@@ -4,6 +4,7 @@ import { CallControls } from './CallControls';
 import { webrtcService } from '../../lib/webrtcService';
 import { updateCallStatus } from '../../lib/calls';
 import { supabase } from '../../lib/supabase';
+import { soundService } from '../../lib/soundService';
 import type { Call } from '../../lib/calls';
 
 interface ActiveCallScreenProps {
@@ -44,10 +45,20 @@ export const ActiveCallScreen: React.FC<ActiveCallScreenProps> = ({
 
   // Atualizar quando o status da chamada mudar (ex: atendida)
   useEffect(() => {
-    setIsRinging(call.status === 'ringing');
-  }, [call.status]);
+    const ringing = call.status === 'ringing';
+    setIsRinging(ringing);
+    if (ringing && isInitiator) {
+      soundService.startRingback();
+    } else {
+      soundService.stopAll();
+    }
+    return () => {
+      soundService.stopAll();
+    };
+  }, [call.status, isInitiator]);
 
   const handleHangup = useCallback(async () => {
+    soundService.stopAll();
     webrtcService.cleanup();
     try {
       const finalStatus = isRinging ? 'cancelled' : 'ended';
@@ -72,31 +83,33 @@ export const ActiveCallScreen: React.FC<ActiveCallScreenProps> = ({
           localVideoRef.current.srcObject = localStream;
         }
 
-        if (remoteUserId) {
-          await webrtcService.initializeCall(call.id, user.id, remoteUserId, {
-            onRemoteStream: (stream) => {
-              if (remoteVideoRef.current) {
-                remoteVideoRef.current.srcObject = stream;
-                remoteVideoRef.current.play().catch(e => console.warn('Erro ao tocar vídeo remoto:', e));
-              }
-              if (remoteAudioRef.current) {
-                remoteAudioRef.current.srcObject = stream;
-                remoteAudioRef.current.play().catch(e => console.warn('Erro ao tocar áudio remoto:', e));
-              }
-            },
-            onConnectionStateChange: (state) => {
-              if (state === 'failed' || state === 'closed') {
-                handleHangup();
-              }
-            },
-            onError: (err) => {
-              console.error('WebRTC error:', err);
-            },
-          });
+        const targetUserId = remoteUserId || (isInitiator ? call.initiated_by : '');
 
-          if (isInitiator) {
-            await webrtcService.createOffer();
-          }
+        await webrtcService.initializeCall(call.id, user.id, targetUserId, {
+          onRemoteStream: (stream) => {
+            console.log('📡 Stream remoto conectado:', stream.getTracks());
+            if (remoteVideoRef.current) {
+              remoteVideoRef.current.srcObject = stream;
+              remoteVideoRef.current.play().catch(e => console.warn('Erro ao tocar vídeo remoto:', e));
+            }
+            if (remoteAudioRef.current) {
+              remoteAudioRef.current.srcObject = stream;
+              remoteAudioRef.current.play().catch(e => console.warn('Erro ao tocar áudio remoto:', e));
+            }
+          },
+          onConnectionStateChange: (state) => {
+            console.log('🔗 Estado WebRTC:', state);
+            if (state === 'failed' || state === 'closed') {
+              handleHangup();
+            }
+          },
+          onError: (err) => {
+            console.error('WebRTC error:', err);
+          },
+        });
+
+        if (isInitiator && targetUserId) {
+          await webrtcService.createOffer();
         }
       } catch (err) {
         console.error('Failed to start call media/offer:', err);

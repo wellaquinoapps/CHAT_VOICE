@@ -47,18 +47,10 @@ export class WebRTCService {
   }
 
   private async getIceServers(): Promise<RTCIceServer[]> {
-    try {
-      const { data, error } = await supabase.functions.invoke('get-turn-credentials');
-      if (!error && data?.iceServers) {
-        return data.iceServers;
-      }
-    } catch (e) {
-      console.warn('Fallback to public STUN servers:', e);
-    }
-
     return [
       { urls: 'stun:stun.l.google.com:19302' },
       { urls: 'stun:stun1.l.google.com:19302' },
+      { urls: 'stun:stun2.l.google.com:19302' },
     ];
   }
 
@@ -91,13 +83,10 @@ export class WebRTCService {
     }
 
     this.peerConnection.ontrack = (event) => {
-      event.streams[0].getTracks().forEach((track) => {
-        if (this.remoteStream) {
-          this.remoteStream.addTrack(track);
-        }
-      });
-      if (this.callbacks && this.remoteStream) {
-        this.callbacks.onRemoteStream(this.remoteStream);
+      const stream = event.streams[0] || new MediaStream([event.track]);
+      this.remoteStream = stream;
+      if (this.callbacks) {
+        this.callbacks.onRemoteStream(stream);
       }
     };
 
@@ -169,6 +158,22 @@ export class WebRTCService {
   private subscribeToSignaling() {
     if (!this.callId || !this.currentUserId) return;
 
+    // 1. Processar sinais já existentes no banco (ex: a oferta inicial enviada antes do receptor montar o componente)
+    supabase
+      .from('call_signals')
+      .select('*')
+      .eq('call_id', this.callId)
+      .neq('sender_id', this.currentUserId)
+      .order('created_at', { ascending: true })
+      .then(({ data }) => {
+        if (data && data.length > 0) {
+          data.forEach(async (signal) => {
+            await this.handleIncomingSignal(signal);
+          });
+        }
+      });
+
+    // 2. Escutar novos sinais em tempo real
     const channel = supabase
       .channel(`signals:${this.callId}`)
       .on(
@@ -182,20 +187,7 @@ export class WebRTCService {
         async (payload) => {
           const signal = payload.new as any;
           if (signal.sender_id === this.currentUserId) return;
-
-          try {
-            if (signal.signal_type === 'offer' && this.peerConnection) {
-              await this.peerConnection.setRemoteDescription(new RTCSessionDescription(signal.payload));
-              await this.createAnswer();
-            } else if (signal.signal_type === 'answer' && this.peerConnection) {
-              await this.peerConnection.setRemoteDescription(new RTCSessionDescription(signal.payload));
-            } else if (signal.signal_type === 'ice-candidate' && this.peerConnection) {
-              await this.peerConnection.addIceCandidate(new RTCIceCandidate(signal.payload));
-            }
-          } catch (err: any) {
-            console.error('Error handling WebRTC signal:', err);
-            this.callbacks?.onError(err);
-          }
+          await this.handleIncomingSignal(signal);
         }
       )
       .subscribe();
@@ -205,6 +197,39 @@ export class WebRTCService {
         supabase.removeChannel(channel);
       },
     };
+  }
+
+  private pendingCandidates: RTCIceCandidateInit[] = [];
+
+  private async handleIncomingSignal(signal: any) {
+    try {
+      if (signal.signal_type === 'offer' && this.peerConnection) {
+        await this.peerConnection.setRemoteDescription(new RTCSessionDescription(signal.payload));
+        // Adicionar candidatos ICE que chegaram antes da oferta
+        while (this.pendingCandidates.length > 0) {
+          const c = this.pendingCandidates.shift();
+          if (c) await this.peerConnection.addIceCandidate(new RTCIceCandidate(c));
+        }
+        await this.createAnswer();
+      } else if (signal.signal_type === 'answer' && this.peerConnection) {
+        if (this.peerConnection.signalingState === 'have-local-offer') {
+          await this.peerConnection.setRemoteDescription(new RTCSessionDescription(signal.payload));
+          while (this.pendingCandidates.length > 0) {
+            const c = this.pendingCandidates.shift();
+            if (c) await this.peerConnection.addIceCandidate(new RTCIceCandidate(c));
+          }
+        }
+      } else if (signal.signal_type === 'ice-candidate' && this.peerConnection) {
+        if (this.peerConnection.remoteDescription && this.peerConnection.remoteDescription.type) {
+          await this.peerConnection.addIceCandidate(new RTCIceCandidate(signal.payload));
+        } else {
+          this.pendingCandidates.push(signal.payload);
+        }
+      }
+    } catch (err: any) {
+      console.error('Error handling WebRTC signal:', err);
+      this.callbacks?.onError(err);
+    }
   }
 
   toggleMicrophone(enabled?: boolean): boolean {
