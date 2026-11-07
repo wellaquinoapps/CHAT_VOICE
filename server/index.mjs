@@ -43,6 +43,107 @@ app.get('/functions/v1/health', (_req, res) => {
   res.json({ status: 'ok', mode: 'local-dev-server' });
 });
 
+// ── create-call (proxy/emulador para chamadas) ───────────────────────────────
+app.post('/functions/v1/create-call', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader?.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Token de autenticação ausente.' });
+    }
+
+    const userClient = createClient(SUPABASE_URL, ANON_KEY, {
+      global: { headers: { Authorization: authHeader } },
+    });
+    const { data: { user }, error: userError } = await userClient.auth.getUser();
+    if (userError || !user) {
+      return res.status(401).json({ error: 'Usuário não autenticado.' });
+    }
+
+    const { conversationId, callType } = req.body;
+    if (!conversationId || !callType) {
+      return res.status(400).json({ error: 'conversationId e callType são obrigatórios.' });
+    }
+
+    // Get family_id
+    const { data: conv, error: convError } = await adminClient
+      .from('conversations')
+      .select('id, family_id')
+      .eq('id', conversationId)
+      .single();
+
+    if (convError || !conv) {
+      return res.status(404).json({ error: 'Conversa não encontrada.' });
+    }
+
+    // Create call
+    const { data: call, error: callError } = await adminClient
+      .from('calls')
+      .insert({
+        family_id: conv.family_id,
+        conversation_id: conversationId,
+        initiated_by: user.id,
+        call_type: callType,
+        status: 'ringing',
+      })
+      .select('*, initiator:profiles!calls_initiated_by_fkey(*)')
+      .single();
+
+    if (callError) {
+      return res.status(500).json({ error: callError.message });
+    }
+
+    return res.status(200).json({ call });
+  } catch (err) {
+    return res.status(500).json({ error: err instanceof Error ? err.message : 'Erro interno' });
+  }
+});
+
+// ── update-call-status (proxy/emulador) ────────────────────────────────────────
+app.post('/functions/v1/update-call-status', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader?.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Token de autenticação ausente.' });
+    }
+
+    const { callId, status } = req.body;
+    if (!callId || !status) {
+      return res.status(400).json({ error: 'callId e status são obrigatórios.' });
+    }
+
+    const updates = { status };
+    const now = new Date().toISOString();
+    if (status === 'accepted') updates.answered_at = now;
+    if (['ended', 'rejected', 'missed', 'cancelled'].includes(status)) updates.ended_at = now;
+
+    const { data: call, error: updateError } = await adminClient
+      .from('calls')
+      .update(updates)
+      .eq('id', callId)
+      .select('*, initiator:profiles!calls_initiated_by_fkey(*)')
+      .single();
+
+    if (updateError) {
+      return res.status(500).json({ error: updateError.message });
+    }
+
+    return res.status(200).json({ call });
+  } catch (err) {
+    return res.status(500).json({ error: err instanceof Error ? err.message : 'Erro interno' });
+  }
+});
+
+// ── get-turn-credentials (fallback para STUN público) ─────────────────────────
+app.all('/functions/v1/get-turn-credentials', (_req, res) => {
+  return res.status(200).json({
+    iceServers: [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' },
+      { urls: 'stun:stun2.l.google.com:19302' },
+    ],
+  });
+});
+
 // ── register-child ────────────────────────────────────────────────────────────
 app.post('/functions/v1/register-child', async (req, res) => {
   try {

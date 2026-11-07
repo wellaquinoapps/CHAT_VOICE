@@ -6,25 +6,49 @@ export type Call = Database['public']['Tables']['calls']['Row'] & {
 };
 
 export async function initiateCall(conversationId: string, callType: CallType): Promise<Call> {
-  const { data, error } = await supabase.functions.invoke('create-call', {
-    body: { conversationId, callType },
-  });
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Não autenticado.');
 
-  if (error) throw error;
-  if (!data?.call) throw new Error('Falha ao iniciar chamada.');
+  // Obter family_id da conversa
+  const { data: conv, error: convError } = await supabase
+    .from('conversations')
+    .select('id, family_id')
+    .eq('id', conversationId)
+    .single();
 
-  return data.call;
+  if (convError || !conv) throw new Error('Conversa não encontrada.');
+
+  const { data: call, error: callError } = await supabase
+    .from('calls')
+    .insert({
+      family_id: conv.family_id,
+      conversation_id: conversationId,
+      initiated_by: user.id,
+      call_type: callType,
+      status: 'ringing',
+    })
+    .select('*, initiator:profiles!calls_initiated_by_fkey(*)')
+    .single();
+
+  if (callError) throw callError;
+  return call as Call;
 }
 
 export async function updateCallStatus(callId: string, status: CallStatus): Promise<Call> {
-  const { data, error } = await supabase.functions.invoke('update-call-status', {
-    body: { callId, status },
-  });
+  const updates: any = { status };
+  const now = new Date().toISOString();
+  if (status === 'accepted') updates.answered_at = now;
+  if (['ended', 'rejected', 'missed', 'cancelled'].includes(status)) updates.ended_at = now;
 
-  if (error) throw error;
-  if (!data?.call) throw new Error('Falha ao atualizar estado da chamada.');
+  const { data: call, error: updateError } = await supabase
+    .from('calls')
+    .update(updates)
+    .eq('id', callId)
+    .select('*, initiator:profiles!calls_initiated_by_fkey(*)')
+    .single();
 
-  return data.call;
+  if (updateError) throw updateError;
+  return call as Call;
 }
 
 export async function fetchCallHistory(conversationId: string, limit: number = 20) {

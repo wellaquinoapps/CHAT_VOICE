@@ -193,8 +193,12 @@ export function App() {
       },
       (updatedCall) => {
         const ended = ['ended', 'rejected', 'missed', 'cancelled'].includes(updatedCall.status);
-        if (activeCall?.id === updatedCall.id && ended) setActiveCall(null);
-        if (incomingCall?.id === updatedCall.id && ended) setIncomingCall(null);
+        if (ended) {
+          setIncomingCall((current) => (current?.id === updatedCall.id ? null : current));
+          setActiveCall((current) => (current?.id === updatedCall.id ? null : current));
+        } else {
+          setActiveCall((current) => (current?.id === updatedCall.id ? updatedCall : current));
+        }
         loadCallHistoryData(conversation.id);
       }
     );
@@ -456,6 +460,7 @@ export function App() {
         <ActiveCallScreen
           call={activeCall}
           isInitiator={activeCall.initiated_by === profile.id}
+          peerId={peerProfile?.id}
           peerName={peerProfile?.display_name ?? undefined}
           onCallEnded={handleHangUpActiveCall}
         />

@@ -9,6 +9,7 @@ import type { Call } from '../../lib/calls';
 interface ActiveCallScreenProps {
   call: Call;
   isInitiator: boolean;
+  peerId?: string;
   peerName?: string;
   onCallEnded: () => void;
 }
@@ -27,6 +28,7 @@ function useCallTimer() {
 export const ActiveCallScreen: React.FC<ActiveCallScreenProps> = ({
   call,
   isInitiator,
+  peerId,
   peerName,
   onCallEnded,
 }) => {
@@ -36,17 +38,24 @@ export const ActiveCallScreen: React.FC<ActiveCallScreenProps> = ({
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoOff, setIsVideoOff] = useState(false);
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
+  const [isRinging, setIsRinging] = useState(call.status === 'ringing');
   const timer = useCallTimer();
+
+  // Atualizar quando o status da chamada mudar (ex: atendida)
+  useEffect(() => {
+    setIsRinging(call.status === 'ringing');
+  }, [call.status]);
 
   const handleHangup = useCallback(async () => {
     webrtcService.cleanup();
     try {
-      await updateCallStatus(call.id, 'ended');
+      const finalStatus = isRinging ? 'cancelled' : 'ended';
+      await updateCallStatus(call.id, finalStatus);
     } catch (e) {
       console.error('Error updating call status:', e);
     }
     onCallEnded();
-  }, [call.id, onCallEnded]);
+  }, [call.id, isRinging, onCallEnded]);
 
   useEffect(() => {
     const start = async () => {
@@ -54,9 +63,7 @@ export const ActiveCallScreen: React.FC<ActiveCallScreenProps> = ({
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) throw new Error('Não autenticado.');
 
-        // Find the peer ID (the one who is NOT the current user)
-        // We need it for signaling; fall back to call.initiated_by if we can't determine
-        const remoteUserId = isInitiator ? '' : call.initiated_by;
+        const remoteUserId = peerId || (isInitiator ? '' : call.initiated_by);
 
         const localStream = await webrtcService.startLocalMedia(call.call_type);
 
@@ -64,28 +71,29 @@ export const ActiveCallScreen: React.FC<ActiveCallScreenProps> = ({
           localVideoRef.current.srcObject = localStream;
         }
 
-        await webrtcService.initializeCall(call.id, user.id, remoteUserId, {
-          onRemoteStream: (stream) => {
-            if (remoteVideoRef.current) {
-              remoteVideoRef.current.srcObject = stream;
-            }
-          },
-          onConnectionStateChange: (state) => {
-            if (state === 'disconnected' || state === 'failed' || state === 'closed') {
-              handleHangup();
-            }
-          },
-          onError: (err) => {
-            console.error('WebRTC error:', err);
-          },
-        });
+        if (remoteUserId) {
+          await webrtcService.initializeCall(call.id, user.id, remoteUserId, {
+            onRemoteStream: (stream) => {
+              if (remoteVideoRef.current) {
+                remoteVideoRef.current.srcObject = stream;
+              }
+            },
+            onConnectionStateChange: (state) => {
+              if (state === 'failed' || state === 'closed') {
+                handleHangup();
+              }
+            },
+            onError: (err) => {
+              console.error('WebRTC error:', err);
+            },
+          });
 
-        if (isInitiator) {
-          await webrtcService.createOffer();
+          if (isInitiator) {
+            await webrtcService.createOffer();
+          }
         }
       } catch (err) {
-        console.error('Failed to start call:', err);
-        handleHangup();
+        console.error('Failed to start call media/offer:', err);
       }
     };
 
@@ -95,7 +103,7 @@ export const ActiveCallScreen: React.FC<ActiveCallScreenProps> = ({
       webrtcService.cleanup();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [peerId]);
 
   const handleToggleMute = () => {
     const newMuted = !isMuted;
@@ -143,7 +151,9 @@ export const ActiveCallScreen: React.FC<ActiveCallScreenProps> = ({
           <Avatar name={peerName} size="xl" />
           <div className="text-center">
             <p className="text-2xl font-bold">{peerName ?? 'Desconhecido'}</p>
-            <p className="text-gray-400 text-sm mt-1">{timer}</p>
+            <p className="text-indigo-400 font-medium text-sm mt-1">
+              {isRinging ? 'Chamando...' : timer}
+            </p>
           </div>
         </div>
       )}
@@ -151,7 +161,9 @@ export const ActiveCallScreen: React.FC<ActiveCallScreenProps> = ({
       {/* Controls overlay */}
       <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent pb-10 pt-6 flex flex-col items-center gap-3">
         {isVideo && (
-          <p className="text-white text-sm font-medium tabular-nums">{timer}</p>
+          <p className="text-white text-sm font-medium tabular-nums">
+            {isRinging ? 'Chamando...' : timer}
+          </p>
         )}
         <CallControls
           isMuted={isMuted}
