@@ -5,6 +5,18 @@
       "destination": "/api/register-child"
     },
     {
+      "source": "/manifest.webmanifest",
+      "destination": "/manifest.webmanifest"
+    },
+    {
+      "source": "/service-worker.js",
+      "destination": "/service-worker.js"
+    },
+    {
+      "source": "/icons/(.*)",
+      "destination": "/icons/$1"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }
