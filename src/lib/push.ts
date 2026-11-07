@@ -57,18 +57,19 @@ export async function subscribeToPushNotifications(): Promise<boolean> {
       return false;
     }
 
-    const response = await fetch('/api/register-push', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${session.access_token}`,
-      },
-      body: JSON.stringify({ subscription: subscription.toJSON() }),
-    });
+    const subJson = subscription.toJSON();
+    const { error: dbError } = await supabase
+      .from('push_subscriptions')
+      .upsert({
+        user_id: session.user.id,
+        endpoint: subscription.endpoint,
+        p256dh: subJson.keys?.p256dh || '',
+        auth: subJson.keys?.auth || '',
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'endpoint' });
 
-    if (!response.ok) {
-      console.error('Failed to register push subscription via API');
-      return false;
+    if (dbError) {
+      console.error('Failed to save push subscription in supabase:', dbError);
     }
 
     return true;
