@@ -24,6 +24,7 @@ import { ActiveCallScreen } from './components/calls/ActiveCallScreen';
 import { CallHistoryList } from './components/calls/CallHistoryList';
 import { GuardianPanel } from './components/family/GuardianPanel';
 import { SettingsPanel } from './components/settings/SettingsPanel';
+import { InstallAppBanner } from './components/notifications/InstallAppBanner';
 
 export function App() {
   // Auth state
@@ -379,6 +380,7 @@ export function App() {
       >
         {activeTab === 'chat' && (
           <div className="flex-1 flex flex-col h-full overflow-hidden">
+            <InstallAppBanner />
             <ChatHeader
               peerName={peerProfile?.display_name ?? family?.name}
               peerAvatar={null}
