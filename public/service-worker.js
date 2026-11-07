@@ -1,9 +1,16 @@
-self.addEventListener('install', () => {
+self.addEventListener('install', (event) => {
   self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(self.clients.claim());
+});
+
+// Manipulador de fetch mínimo obrigatório pelo Chrome para habilitar instalação PWA
+self.addEventListener('fetch', (event) => {
+  event.respondWith(
+    fetch(event.request).catch(() => caches.match(event.request) as any)
+  );
 });
 
 self.addEventListener('push', (event) => {
